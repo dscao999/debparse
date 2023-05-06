@@ -1,0 +1,5 @@
+libc6
+libgcc-s1
+gcc-10-base
+gcc-9-base
+
