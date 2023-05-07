@@ -8,6 +8,9 @@ import shutil
 
 isodir = '/'
 
+def list_length(item):
+    return len(item['deps'])
+
 def remove_vname(pkgname):
     if pkgname.find('(') == -1:
         return pkgname.strip(' ').rstrip(' ')
@@ -109,9 +112,23 @@ for pkgname in pkglist:
     if debinfo[0] == 0:
         deps.append(debinfo[1])
 
+stripped_deps = []
+for pkg in deps:
+    pname = pkg['name']
+    if pname == 'libc6' or pname == 'libgcc-s1' or pname == 'gcc-10-base' or pname == 'gcc-9-base':
+        continue
+    pdeps = pkg['deps']
+    npdeps = []
+    for depname in pdeps:
+        if depname == 'libc6' or depname == 'libgcc-s1' or depname == 'gcc-base-10' or depname == 'gcc-9-base':
+            continue
+        npdeps.append(depname)
+    stripped_deps.append({'name': pname, 'deps':npdeps})
+
+stripped_deps.sort(key=list_length)
 print("==============Package Information==================")
-for pkgs in deps:
-    print(f"Package: {pkgs['name']} deps: {pkgs['deps']}")
+for pkgs in stripped_deps:
+    print(f"{pkgs['name']} {pkgs['deps']}")
 
 if not os.path.ismount(isofile):
     comp = subp.run(f"sudo umount {isodir}", shell=True, text=True, capture_output=True)
