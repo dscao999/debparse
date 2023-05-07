@@ -60,21 +60,27 @@ isodir = "iso-" + str(os.getpid())
 curdir = os.curdir
 
 if len(sys.argv) == 1:
-    print("An ISO file must be specified")
+    print("An ISO file or a ISO mount point directory must be specified")
     quit(1)
 
-if not os.path.isfile(isofile):
-    print(isofile + " does not exist")
+if not os.path.isfile(isofile) and not os.path.ismount(isofile):
+    print(isofile + " does not exist, or is not a mount point")
     quit(2)
 
-if os.path.exists(isodir):
+if os.path.ismount(isofile):
+    isodir = isofile
+elif os.path.exists(isodir):
     print(f"Path {isodir} already exists. Please remove it first.")
     quit(3)
-
-os.mkdir(isodir)
-comp = subp.run(f"sudo mount -o ro {curdir}/{isofile} {isodir}", shell=True, text=True, capture_output=True)
-if comp.returncode == 0:
-    print(f"{isofile} mounted onto {isodir}")
+else:
+    os.mkdir(isodir)
+    comp = subp.run(f"sudo mount -o ro {curdir}/{isofile} {isodir}", shell=True, text=True, capture_output=True)
+    if comp.returncode == 0:
+        print(f"{isofile} mounted onto {isodir}")
+    else:
+        print(f"Cannot mount {isofile}")
+        os.rmdir(isodir)
+        quit(4)
 
 seacmd = "dpkg --list|grep -E '^ii'|awk '{print $2}'"
 
@@ -107,11 +113,12 @@ print("==============Package Information==================")
 for pkgs in deps:
     print(f"Package: {pkgs['name']} deps: {pkgs['deps']}")
 
-comp = subp.run(f"sudo umount {isodir}", shell=True, text=True, capture_output=True)
-if comp.returncode != 0:
-    errmsg = comp.stderr.rstrip('\n')
-    print(f"Cannot umount {isodir}: {errmsg}")
-else:
-    os.rmdir(isodir)
+if not os.path.ismount(isofile):
+    comp = subp.run(f"sudo umount {isodir}", shell=True, text=True, capture_output=True)
+    if comp.returncode != 0:
+        errmsg = comp.stderr.rstrip('\n')
+        print(f"Cannot umount {isodir}: {errmsg}")
+    else:
+        os.rmdir(isodir)
 
 quit(0)
