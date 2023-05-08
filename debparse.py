@@ -8,8 +8,74 @@ import shutil
 
 isodir = '/'
 
-def list_length(item):
-    return len(item['deps'])
+illpkg = ['perlapi-5.32.0', 'libgcc1', 'libva-driver-abi-1.8', 'libva-driver-abi-1.10', 'libtime-local-perl', \
+        'perl-openssl-abi-1.1', 'libnet-perl', 'libtest-simple-perl', 'libreoffice-core-nogui', \
+        'libjs-normalize.css']
+cycle_list = [('libc6', 'libgcc-s1'), ('libdevmapper-event1.02.1', 'dmsetup'), ('tasksel', 'tasksel-data')]
+installed = []
+pkg_deps = []
+recursive = 0
+
+def do_install(pname):
+    global installed
+
+    installed.append(pname)
+
+def is_cyclic(pname):
+    global cycle_list
+
+    circle = False
+    cycle = ()
+    for cycle in cycle_list:
+        for name in cycle:
+            if pname == name:
+                circle = True
+                break;
+    if circle:
+        for pkg in cycle:
+            do_install(pkg)
+        print(f"Installed Cyclic Dependencies: {cycle}")
+    return circle
+
+def is_installed(pname):
+    for ipkg in installed:
+        if pname == ipkg:
+            return True
+    for ipkg in illpkg:
+        if pname == ipkg:
+            return True
+
+    return False
+
+def install_pkg(pname, pdeps):
+    global recursive, pkg_deps, cycles
+
+    recursive += 1
+    if (recursive > 15):
+        print(f'Recursion depth: {recursive}')
+        quit(11)
+
+    if is_installed(pname):
+        recursive -= 1
+        return
+    if is_cyclic(pname):
+        recursive -= 1
+        return
+
+    for dep in pdeps:
+        if is_installed(dep):
+            continue
+        for depp in pkg_deps:
+            if depp['name'] == dep:
+                break
+        if depp['name'] != dep:
+            print(f'Fatal Error! Cannot find {dep} in package list')
+        else:
+            install_pkg(dep, depp['deps'])
+
+    do_install(pname)
+    print(f'Installed  {pname}')
+    recursive -= 1
 
 def remove_vname(pkgname):
     if pkgname.find('(') == -1:
@@ -99,7 +165,6 @@ for pkgname in pkginfo:
     pkgname = pkgname.split(':')[0]
     pkglist.append(pkgname)
 
-deps = []
 for pkgname in pkglist:
     find = f"find {isodir}/pool -name {pkgname}_\* -print"
     comp = subp.run(find, shell=True, text=True, capture_output=True)
@@ -110,25 +175,18 @@ for pkgname in pkglist:
     debfile = comp.stdout.rstrip('\n')
     debinfo = get_debinfo(debfile, pkgname)
     if debinfo[0] == 0:
-        deps.append(debinfo[1])
+        pkg_deps.append(debinfo[1])
+    else:
+        print(f'Package: {pkgname} info missing')
 
-stripped_deps = []
-for pkg in deps:
-    pname = pkg['name']
-    if pname == 'libc6' or pname == 'libgcc-s1' or pname == 'gcc-10-base' or pname == 'gcc-9-base':
-        continue
-    pdeps = pkg['deps']
-    npdeps = []
-    for depname in pdeps:
-        if depname == 'libc6' or depname == 'libgcc-s1' or depname == 'gcc-base-10' or depname == 'gcc-9-base':
-            continue
-        npdeps.append(depname)
-    stripped_deps.append({'name': pname, 'deps':npdeps})
-
-stripped_deps.sort(key=list_length)
 print("==============Package Information==================")
-for pkgs in stripped_deps:
-    print(f"{pkgs['name']} {pkgs['deps']}")
+for pkg in pkg_deps:
+    pname = pkg['name']
+    pdeps = pkg['deps']
+    if is_installed(pname):
+        continue
+    recursive = 0
+    install_pkg(pname, pdeps);
 
 if not os.path.ismount(isofile):
     comp = subp.run(f"sudo umount {isodir}", shell=True, text=True, capture_output=True)
