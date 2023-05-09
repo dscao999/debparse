@@ -8,10 +8,8 @@ import shutil
 
 isodir = '/'
 
-illpkg = ['perlapi-5.32.0', 'libgcc1', 'libva-driver-abi-1.8', 'libva-driver-abi-1.10', 'libtime-local-perl', \
-        'perl-openssl-abi-1.1', 'libnet-perl', 'libtest-simple-perl', 'libreoffice-core-nogui', \
-        'libjs-normalize.css']
 cycle_list = [('libc6', 'libgcc-s1'), ('libdevmapper-event1.02.1', 'dmsetup'), ('tasksel', 'tasksel-data')]
+virtual_pkgs = []
 installed = []
 pkg_deps = []
 recursive = 0
@@ -25,30 +23,43 @@ def is_cyclic(pname):
     global cycle_list
 
     circle = False
-    cycle = ()
+    cycle_hit = ()
     for cycle in cycle_list:
         for name in cycle:
             if pname == name:
                 circle = True
+                cycle_hit = cycle
                 break;
+        if circle:
+            break
+
     if circle:
-        for pkg in cycle:
+        for pkg in cycle_hit:
             do_install(pkg)
-        print(f"Installed Cyclic Dependencies: {cycle}")
+        print(f"Installed Cyclic Dependencies: {cycle_hit}")
     return circle
 
 def is_installed(pname):
+    global installed, virtual_pkgs
     for ipkg in installed:
         if pname == ipkg:
             return True
-    for ipkg in illpkg:
-        if pname == ipkg:
+    for vpkg in virtual_pkgs:
+        if pname == vpkg:
             return True
+
+    dpkgcmd = f"dpkg --list {pname}|grep -E '^un'"
+    comp = subp.run(dpkgcmd, shell=True, text=True, capture_output=True)
+    if comp.returncode == 0:
+        res = comp.stdout.rstrip('\n')
+        print(f"{res}")
+        virtual_pkgs.append(pname)
+        return True
 
     return False
 
 def install_pkg(pname, pdeps):
-    global recursive, pkg_deps, cycles
+    global recursive, pkg_deps, cycles, isodir
 
     recursive += 1
     if (recursive > 15):
@@ -65,10 +76,12 @@ def install_pkg(pname, pdeps):
     for dep in pdeps:
         if is_installed(dep):
             continue
+        found_pkg = False
         for depp in pkg_deps:
             if depp['name'] == dep:
+                found_pkg = True
                 break
-        if depp['name'] != dep:
+        if not found_pkg:
             print(f'Fatal Error! Cannot find {dep} in package list')
         else:
             install_pkg(dep, depp['deps'])
